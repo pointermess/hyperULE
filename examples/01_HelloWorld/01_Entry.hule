@@ -1,0 +1,3 @@
+entry {
+    OUT1.Data = "Hello World from hyperULE";
+}

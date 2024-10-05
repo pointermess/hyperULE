@@ -1,0 +1,7 @@
+string Greet(string name) {
+    return "Hello " + name + " from HyperULE";
+}
+
+entry {
+    OUT1.Data = Greet(OUT1.Data);
+}
