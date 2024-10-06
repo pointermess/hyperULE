@@ -51,6 +51,10 @@ Developers of hyerULE have some ways of optimizing the output ULE code.
   Defining functions as `inline` functions tell the compiler to not create a separate routine in the output code, but
   instead inline the instructions within the caller function.
 
+- Global variables
+
+  Global variables are not defined on the stack and will be inlined by the compiler. This results in smaller and faster code with less memory usage. Parameters and local variables will be defined on the virtual runtime stack but are retained within the function scope. 
+
 #### Compiler optimizations
 
 - **Dead code elimination** (unimplemented yet)
