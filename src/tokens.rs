@@ -125,9 +125,9 @@ impl Token {
             _ => {
                 if token.starts_with('"') && token.ends_with('"') {
                     TokenType::ConstStringExpression
-                } else if let Ok(int) = &self.value.parse::<i32>() {
+                } else if let Ok(_) = &self.value.parse::<i32>() {
                     TokenType::ConstIntegerExpression
-                } else if let Ok(int) = &self.value.parse::<i32>() {
+                } else if let Ok(_) = &self.value.parse::<i32>() {
                     TokenType::ConstIntegerExpression
                 } else {
                     TokenType::Identifier
