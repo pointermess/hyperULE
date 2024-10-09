@@ -7,10 +7,12 @@ mod generator;
 mod parser;
 mod program;
 mod ule;
+mod filebuilder;
 
 use tokenizer::*;
 use tokens::*;
 use parser::*;
+use crate::ast::HuleProgramAst;
 
 fn main() {
     let mut tokenizer = Tokenizer::new();
@@ -35,9 +37,15 @@ fn main() {
         input = input.trim().to_string();
 
         let mut parser = AstParser::new(&input);
-        let ast = parser.parse(&input);
+        match parser.parse(&input) {
+            Ok(ast) => {
+                println!("{:#?}", ast);
+            }
+            Err(err) => {
+                println!("Compilation failed during parsing: {}", err.to_message())
+            }
+        }
 
-        println!("{:#?}", ast);
 
         // let source_code = r#"class start comment/* test adasdasas */endcomment Example { int x = 10; }"#;
         // let tokens = tokenizer.tokenize(&input);
