@@ -1,11 +1,14 @@
+use std::string::String;
+use std::cmp::PartialEq;
 use std::string::ParseError;
 use crate::tokenizer::{Tokenized, Tokenizer};
 use crate::ast::*;
+use crate::ast::HuleExpression::{Binary, Undefined};
+use crate::parser::AstParserError::IncompatibleStatement;
 use crate::tokens::{Token, TokenType};
+use crate::tokens::TokenType::BracketClose;
 
-
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AstParserError {
     EndOfFile,
     UnexpectedEof,
@@ -23,7 +26,7 @@ impl AstParserError {
             AstParserError::EndOfFile => format!("EndOfFile"),
             AstParserError::UnexpectedEof => "UnexpectedEof".to_string(),
             AstParserError::TokenExpected(expected, given)
-            => format!("Token '{}' expected but '{}' given.", given, expected),
+            => format!("Token '{}' expected but '{}' given.", expected, given),
             AstParserError::SomeTokenExpected(_, _) => "SomeTokenExpected".to_string(),
             AstParserError::StatementExpected(_) => "StatementExpected".to_string(),
             AstParserError::IncompatibleStatement => "IncompatibleStatement".to_string(),
@@ -42,7 +45,16 @@ impl AstParser {
         let mut token = self.tokens.next().ok_or_else(|| AstParserError::UnexpectedEof)?.clone();
         if token.get_token_type() != token_type {
             self.tokens.prev();
-            return Err(AstParserError::TokenExpected(token.value, format!("{}", "test")));
+            return Err(AstParserError::TokenExpected(format!("{}", token_type.to_string()), token.value));
+        }
+
+        Ok(token)
+    }
+    fn expect_some_token(&mut self, tokens: Vec<TokenType>) -> Result<Token, AstParserError> {
+        let mut token = self.tokens.next().ok_or_else(|| AstParserError::UnexpectedEof)?.clone();
+        if tokens.contains(&token.get_calculated_token_type()) {
+            self.tokens.prev();
+            return Err(AstParserError::TokenExpected(format!("{:?}", tokens), token.value));
         }
 
         Ok(token)
@@ -52,7 +64,17 @@ impl AstParser {
         let mut token = self.tokens.next().ok_or_else(|| AstParserError::UnexpectedEof)?.clone();
         if token.value != token_value {
             self.tokens.prev();
-            return Err(AstParserError::TokenExpected(token.value, format!("{}", &token_value)));
+            return Err(AstParserError::TokenExpected(format!("{}", token_value), token.value));
+        }
+
+        Ok(token)
+    }
+
+    fn expect_some_token_value(&mut self, token_values: Vec<String>) -> Result<Token, AstParserError> {
+        let mut token = self.tokens.next().ok_or_else(|| AstParserError::UnexpectedEof)?.clone();
+        if token_values.contains(&token.value) {
+            self.tokens.prev();
+            return Err(AstParserError::TokenExpected(format!("{:?}", token_values), token.value));
         }
 
         Ok(token)
@@ -66,29 +88,154 @@ impl AstParser {
     /// Bracket-Expression
     /// <bracket_open_token> <expression> <bracket_close_token>
     fn try_parse_bracket_expression(&mut self) -> Result<HuleExpression, AstParserError> {
-        self.expect_token_type(TokenType::Semicolon)
+        let start_index = self.tokens.get_current_token_index();
+
+        self.expect_token_type(TokenType::BracketOpen)
+            .or_reset(self, start_index)
             .or_else(|_| Err(AstParserError::IncompatibleStatement))?;
 
         let result = self.try_parse_expression()
             .or_else(|_| Err(AstParserError::IncompatibleStatement))?;
 
-        self.expect_token_type(TokenType::Semicolon)?;
+        self.expect_token_type(TokenType::BracketClose)?;
 
         Ok(result)
     }
 
-    fn try_parse_expression(&mut self) -> Result<HuleExpression, AstParserError> {
+    fn try_parse_simple_expression(&mut self) -> Result<HuleExpression, AstParserError> {
         let current_index = self.tokens.get_current_token_index();
 
-        let test = self.try_parse_bracket_expression()
-            .or_reset(self, current_index).or_else(|_| self.try_parse_bracket_expression());
-
-        test
+        if let Some(current_token) = self.tokens.next() {
+            match current_token.get_calculated_token_type() {
+                TokenType::Identifier => Ok(HuleExpression::Identifier(current_token.value.clone())),
+                TokenType::ConstStringExpression => Ok(HuleExpression::String(current_token.value.clone())),
+                TokenType::ConstIntegerExpression => Ok(HuleExpression::Integer(current_token.value.parse().unwrap())),
+                _ => {
+                    self.tokens.set_current_token_index(current_index);
+                    Err(AstParserError::IncompatibleStatement)
+                },
+            }
+        } else {
+            self.tokens.set_current_token_index(current_index);
+            Err(AstParserError::IncompatibleStatement)
+        }
     }
+
+    fn new_parse_expression(&mut self) -> Result<HuleExpression, AstParserError> {
+        let start_index = self.tokens.get_current_token_index();
+
+        let mut operator = None;
+        if let Ok(expression) = self.try_parse_simple_expression() {
+            let next_index = self.tokens.get_current_token_index();
+
+
+            if let Ok(op) = self.try_parse_binary_operator()
+                .or_reset(self, next_index) {
+
+                operator = Some(op);
+            }
+
+            // if let Ok(op) = operator {
+            //     if let Ok(second_expression) = self.try_parse_simple_expression() {
+            //         return Ok(HuleExpression::Binary {
+            //             left: Box::new(expression),
+            //             right: Box::new(second_expression),
+            //             operator: op
+            //         });
+            //     }
+            // } else {
+            //     return Ok(expression);
+            // }
+        }
+        Err(IncompatibleStatement)
+    }
+
+    fn try_parse_binary_operator(&mut self) -> Result<Operator, AstParserError> {
+        let current_index = self.tokens.get_current_token_index();
+
+        if let Some(current_token) = self.tokens.next() {
+            match current_token.get_calculated_token_type() {
+                TokenType::Equal => return Ok(Operator::Equal),
+                TokenType::NotEqual => return Ok(Operator::NotEqual),
+                TokenType::GreaterThan => return Ok(Operator::GreaterThan),
+                TokenType::LowerThan => return Ok(Operator::LowerThan),
+                TokenType::GreaterEqualThan => return Ok(Operator::GreaterEqualThan),
+                TokenType::LowerEqualThan => return Ok(Operator::LowerEqualThan),
+                TokenType::And => return Ok(Operator::And),
+                TokenType::Or => return Ok(Operator::Or),
+                TokenType::Plus => return Ok(Operator::Plus),
+                TokenType::Minus => return Ok(Operator::Minus),
+                TokenType::Divide => return Ok(Operator::Divide),
+                TokenType::Multiply => return Ok(Operator::Multiply),
+                _ => return Err(AstParserError::IncompatibleStatement)
+            }
+        } else {
+            self.tokens.set_current_token_index(current_index);
+            Err(AstParserError::IncompatibleStatement)
+        }
+    }
+
+    fn try_parse_binary_expression(&mut self, left_side: HuleExpression) -> Result<HuleExpression, AstParserError>  {
+        let current_index = self.tokens.get_current_token_index();
+
+        let operator = self.try_parse_binary_operator()
+            .or_reset(self, current_index)?;
+
+        let right_side = self.try_parse_expression()
+            .or_reset(self, current_index)?;
+
+        Ok(HuleExpression::Binary {
+            left: Box::new(left_side),
+            right: Box::new(right_side),
+            operator: operator.clone(),
+        })
+    }
+    fn try_parse_expression(&mut self) -> Result<HuleExpression, AstParserError> {
+        let mut current_index = self.tokens.get_current_token_index();
+
+        let mut result = HuleExpression::Undefined;
+
+        let bracket = self.expect_token_type(TokenType::BracketOpen);
+
+        if let Ok(expr) = self.try_parse_simple_expression().or_reset(self, current_index) {
+            current_index = self.tokens.get_current_token_index();
+            let binary_expression = self.try_parse_binary_expression(expr.clone())
+                .or_reset(self, current_index)
+                .unwrap_or(HuleExpression::Undefined);
+
+            if binary_expression == HuleExpression::Undefined {
+                result = expr;
+            } else {
+                result = binary_expression;
+            }
+        }
+
+        if let(parsed_result) = result.clone() { // clone right??
+            if bracket.is_ok() {
+                //bracket
+                result = HuleExpression::Bracketed(Box::new(result));
+
+                self.expect_token_type(TokenType::BracketClose)?;
+            }
+
+            return Ok(result);
+        }
+
+        Err(AstParserError::IncompatibleStatement)
+    }
+
+
+    // fn try_parse_expression(&mut self) -> Result<HuleExpression, AstParserError> {
+    //     let current_index = self.tokens.get_current_token_index();
+    //
+    //     self.try_parse_bracket_expression()
+    //         .or_reset(self, current_index).or_else(|_| self.try_parse_binary_expression())
+    //         //.or_reset(self, current_index).or_else(|_| self.try_parse_simple_expression())
+    // }
 
     fn try_parse_var_decl(&mut self) -> Result<HuleStatement, AstParserError> {
         let var_type = self.expect_token_type(TokenType::Identifier)
-            .map_err(|_| AstParserError::EndOfFile)?;
+            .map_err(|_| AstParserError::IncompatibleStatement)?;
 
         let var_name = self.expect_token_type(TokenType::Identifier)?;
 
@@ -100,6 +247,8 @@ impl AstParser {
             var_value = Some(self.try_parse_expression()?);
         }
 
+        self.expect_token_type(TokenType::Semicolon)?;
+
         Ok(HuleStatement::VariableDecl {
             data_type: var_type.value,
             name: var_name.value,
@@ -108,11 +257,26 @@ impl AstParser {
     }
 
     fn try_parse_local_body(&mut self) -> Result<Vec<HuleStatement>, AstParserError> {
-        let result : Vec<HuleStatement> = vec![];
-        let test = self.try_parse_var_decl() // Try other internal parsers
-            ;//.or_else(|_| self.try_parse_if_statement());
+        let mut result : Vec<HuleStatement> = vec![];
+        let mut last_error = AstParserError::IncompatibleStatement;
 
-        Err(AstParserError::IncompatibleStatement)
+        loop {
+            let mut parsed = self.try_parse_var_decl() // Try other internal parsers
+                ;//.or_else(|_| self.try_parse_if_statement());
+
+            if let Ok(statement) = parsed {
+                result.push(statement);
+            } else {
+                last_error = parsed.unwrap_err();
+                break;
+            }
+        }
+
+        if last_error != AstParserError::IncompatibleStatement{
+            return Err(last_error);
+        }
+
+        Ok(result)
     }
 
     fn try_parse_func_params(&mut self) -> Result<Vec<HuleParameter>, AstParserError> {
@@ -168,13 +332,12 @@ impl AstParser {
         let mut func_name = self.expect_token_type(TokenType::Identifier)?;
 
         // bracket open
-        let mut general_token = self.tokens.next().ok_or_else(|| AstParserError::IncompatibleStatement)?.clone();
-        if general_token.get_token_type() != TokenType::BracketOpen {
-            return Err(AstParserError::TokenExpected("(".to_string(), general_token.value));
-        }
+        self.expect_token_type(TokenType::BracketOpen)?;
 
         // parameters
-        let mut parameters = self.try_parse_func_params()?.clone();
+        let mut parameters = self.try_parse_func_params()
+            .unwrap_or(vec![]);
+
         println!("found {} params", parameters.len());
 
 
@@ -192,6 +355,8 @@ impl AstParser {
 
 
         // body
+        let body = self.try_parse_local_body()
+            .unwrap_or_else(|_| vec![]);
 
         // curly bracket close
         let mut general_token = self.tokens.next().ok_or_else(|| AstParserError::IncompatibleStatement)?.clone();
@@ -203,7 +368,7 @@ impl AstParser {
             name: func_name.value.clone(),
             return_type: func_ret_type.value.clone(),
             parameters,
-            body: vec![],
+            body,
         })
     }
 
@@ -230,7 +395,6 @@ impl AstParser {
             let current_index = self.tokens.get_current_token_index();
 
             let res = self.try_parse_var_decl()
-                .or_reset(self, current_index).or_else(|_| self.try_parse_function_decl())
                 .or_reset(self, current_index).or_else(|_| self.try_parse_function_decl());
 
             match res {
@@ -244,7 +408,7 @@ impl AstParser {
                     } else if let AstParserError::EndOfFile = err {
                         break;
                     } else {
-                        println!("Error: {:?}", err.to_message());
+                        println!("[Error] {:?}", err.to_message());
                         return Err(err);
                     }
                 }
