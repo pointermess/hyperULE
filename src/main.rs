@@ -9,7 +9,6 @@ mod program;
 mod ule;
 mod filebuilder;
 
-use tokenizer::*;
 use parser::*;
 
 fn main() {

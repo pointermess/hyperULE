@@ -3,7 +3,6 @@ use std::cmp::PartialEq;
 use std::string::ParseError;
 use crate::tokenizer::{Tokenized, Tokenizer};
 use crate::ast::*;
-use crate::parser::AstParserError::IncompatibleStatement;
 use crate::tokens::{Token, TokenType};
 
 #[derive(Debug, Clone, PartialEq)]
