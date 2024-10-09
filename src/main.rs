@@ -10,13 +10,9 @@ mod ule;
 mod filebuilder;
 
 use tokenizer::*;
-use tokens::*;
 use parser::*;
-use crate::ast::HuleProgramAst;
 
 fn main() {
-    let mut tokenizer = Tokenizer::new();
-
     println!("hyperULE Compiler v0.1");
     println!("----------------------");
     println!("{}", concat!(
