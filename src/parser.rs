@@ -3,10 +3,8 @@ use std::cmp::PartialEq;
 use std::string::ParseError;
 use crate::tokenizer::{Tokenized, Tokenizer};
 use crate::ast::*;
-use crate::ast::HuleExpression::{Binary, Undefined};
 use crate::parser::AstParserError::IncompatibleStatement;
 use crate::tokens::{Token, TokenType};
-use crate::tokens::TokenType::BracketClose;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstParserError {
@@ -119,35 +117,6 @@ impl AstParser {
             self.tokens.set_current_token_index(current_index);
             Err(AstParserError::IncompatibleStatement)
         }
-    }
-
-    fn new_parse_expression(&mut self) -> Result<HuleExpression, AstParserError> {
-        let start_index = self.tokens.get_current_token_index();
-
-        let mut operator = None;
-        if let Ok(expression) = self.try_parse_simple_expression() {
-            let next_index = self.tokens.get_current_token_index();
-
-
-            if let Ok(op) = self.try_parse_binary_operator()
-                .or_reset(self, next_index) {
-
-                operator = Some(op);
-            }
-
-            // if let Ok(op) = operator {
-            //     if let Ok(second_expression) = self.try_parse_simple_expression() {
-            //         return Ok(HuleExpression::Binary {
-            //             left: Box::new(expression),
-            //             right: Box::new(second_expression),
-            //             operator: op
-            //         });
-            //     }
-            // } else {
-            //     return Ok(expression);
-            // }
-        }
-        Err(IncompatibleStatement)
     }
 
     fn try_parse_binary_operator(&mut self) -> Result<Operator, AstParserError> {
@@ -317,14 +286,6 @@ impl AstParser {
     }
 
     fn try_parse_function_decl(&mut self) -> Result<HuleStatement, AstParserError> {
-        let remember_start = self.tokens.remember();
-
-        // return type
-        // let mut func_ret_type = self.tokens.next().ok_or_else(|| AstParserError::IncompatibleStatement)?.clone();
-        // if func_ret_type.get_token_type() != TokenType::Identifier {
-        //     return Err(AstParserError::IncompatibleStatement);
-        // }
-
         let mut func_ret_type = self.expect_token_type(TokenType::Identifier)
             .map_err(|_| AstParserError::IncompatibleStatement)?;
 
@@ -353,7 +314,6 @@ impl AstParser {
             return Err(AstParserError::TokenExpected("{".to_string(), general_token.value));
         }
 
-
         // body
         let body = self.try_parse_local_body()
             .unwrap_or_else(|_| vec![]);
@@ -375,7 +335,7 @@ impl AstParser {
     pub fn new(source : &str) -> AstParser {
         AstParser {
             tokens: Tokenized::new(),
-            source: "".to_string(),
+            source: source.to_string(),
         }
     }
 
@@ -389,7 +349,7 @@ impl AstParser {
         let mut tokenizer = Tokenizer::new();
         self.tokens = tokenizer.tokenize(&self.source);
 
-        let last_error : Option<ParseError> = None;
+        let _last_error : Option<ParseError> = None;
 
         loop {
             let current_index = self.tokens.get_current_token_index();
