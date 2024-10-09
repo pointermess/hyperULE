@@ -7,24 +7,29 @@ pub struct TokenInfo {
     last_token: Token
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Operator {
-    Equals,
-    NotEquals,
+    Equal,
+    NotEqual,
 
     GreaterThan,
-    GreaterOrEqualsThan,
+    GreaterEqualThan,
     LowerThan,
-    LowerOrEqualsThan,
+    LowerEqualThan,
 
-    Add,
-    Subtract,
+    And,
+    Or,
+
+    Plus,
+    Minus,
     Multiply,
     Divide,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum HuleExpression {
+    Undefined,
+    Bracketed(Box<HuleExpression>),
     Boolean(bool),
     String(String),
     Integer(i32),
