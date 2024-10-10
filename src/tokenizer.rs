@@ -75,6 +75,10 @@ impl Tokenized {
         }
 
         self.current_token_index -= 1;
+        if self.current_token_index < 0 {
+            return None;
+        }
+
         Some(&self.tokens[self.current_token_index as usize])
     }
 
