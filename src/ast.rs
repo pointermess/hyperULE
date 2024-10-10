@@ -37,8 +37,8 @@ pub enum HuleExpression {
     Call(String, Vec<HuleExpression>),
     Binary {
         left: Box<HuleExpression>,
-        right: Box<HuleExpression>,
         operator: Operator,
+        right: Box<HuleExpression>,
     },
 }
 
@@ -76,6 +76,21 @@ impl HuleExpressionResultExt for Result<HuleExpression, AstParserError> {
     }
 }
 
+impl HuleExpressionResultExt for Result<Vec<HuleExpression>, AstParserError> {
+    fn or_reset(self, program : &mut AstParser, index : usize) -> Self
+    {
+        match &self {
+            Ok(_) => {
+                self
+            }
+            Err(_) => {
+                program.tokens.set_current_token_index(index);
+                self
+            }
+        }
+    }
+}
+
 impl HuleExpressionResultExt for Result<Token, AstParserError> {
     fn or_reset(self, program : &mut AstParser, index : usize) -> Self
     {
@@ -94,52 +109,109 @@ impl HuleExpressionResultExt for Result<Token, AstParserError> {
 #[derive(Debug, Clone)]
 
 pub struct HuleParameter {
-    pub(crate) data_type: String,
-    pub(crate) name: String,
+    data_type: String,
+    name: String,
 }
 
+impl HuleParameter {
+    pub fn new(data_type: &str, name: &str) -> HuleParameter{
+        HuleParameter {
+            data_type: data_type.to_string(),
+            name: name.to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HuleFuncCall {
+    pub name: String,
+    pub parameters: Vec<HuleExpression>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HuleFuncDef {
+    pub name: String,
+    pub parameters: Vec<HuleParameter>,
+    pub return_type : String,
+    pub body: Box<HuleStatement>,
+}
+
+#[derive(Clone, Debug)]
+pub struct  HuleIfStatement {
+    pub condition: HuleExpression,
+    pub body: Box<HuleStatement>,
+}
+#[derive(Clone, Debug)]
+pub struct  HuleVariableDecl {
+    pub data_type: String,
+    pub name: String,
+    pub value: Option<HuleExpression>,
+}
+
+#[derive(Clone, Debug)]
+pub struct  HuleVariableDef {
+    pub name: String,
+    pub value: HuleExpression,
+}
+
+#[derive(Clone, Debug)]
+pub struct  HuleStructDecl {
+    pub name: String,
+    pub params: Vec<HuleParameter>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HuleStructDef {
+    pub name: String,
+    pub members: Vec<String>,
+}
+#[derive(Clone, Debug)]
+pub struct HuleBody {
+    pub items: Vec<HuleStatement>
+}
+
+impl HuleBody {
+    pub fn new(items : Vec<HuleStatement>) -> HuleBody {
+        HuleBody {
+            items
+        }
+    }
+}
+
+/// Statements
+///
 #[derive(Debug, Clone)]
 pub enum HuleStatement {
     Undefined,
-
-    VariableDecl {
-        data_type: String,
-        name: String,
-        value: Option<HuleExpression>,
-    },
-
-    VariableDef {
-        name: String,
-        value: HuleExpression,
-    },
-
-
-    StructDecl {
-        name: String,
-        params: Vec<HuleParameter>,
-    },
-
-    StructDef {
-        name: String,
-        members: Vec<String>,
-    },
-
-    IfStatement {
-        condition: HuleExpression,
-        body: Vec<HuleStatement>,
-    },
-
-    FunctionDef {
-        name: String,
-        parameters: Vec<HuleParameter>,
-        return_type : String,
-        body: Vec<HuleStatement>,
-    },
-
+    VariableDecl(HuleVariableDecl),
+    VariableDef(HuleVariableDef),
+    StructDecl(HuleStructDecl),
+    StructDef(HuleStructDef),
+    IfStatement(HuleIfStatement),
+    FunctionDef(HuleFuncDef),
+    FunctionCall(HuleFuncCall),
+    Body(HuleBody),
     Return(HuleExpression),
+}
+
+
+pub trait FunctionCallIterator {
+    fn iter_function_calls(&self) -> Box<dyn Iterator<Item = HuleFuncCall> + '_>;
+}
+
+impl FunctionCallIterator for Vec<HuleStatement> {
+    fn iter_function_calls(&self) -> Box<dyn Iterator<Item = HuleFuncCall> + '_> {
+        Box::new(self.iter().filter_map(|statement| {
+            if let HuleStatement::FunctionCall(fn_call) = statement {
+                Some(fn_call.clone())
+            } else {
+                None
+            }
+        }))
+    }
 }
 
 #[derive(Debug)]
 pub struct HuleProgramAst {
-    pub body: Vec<HuleStatement>,
+    pub body: HuleBody,
 }
