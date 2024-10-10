@@ -33,7 +33,8 @@ impl AstParserError {
 
 pub struct AstParser {
     pub(crate) tokens : Tokenized,
-    source : String
+    source : String,
+
 }
 
 
@@ -79,8 +80,30 @@ impl AstParser {
 
     /// If-Statement
     /// if <bracket_open_token> ... <expression> ... <bracket_close_token>
-    // fn try_parse_if_statement(&mut self) -> Result<HuleStatement, AstParserError> {
-    // }
+    fn try_parse_if_statement(&mut self) -> Result<HuleStatement, AstParserError> {
+        let _ = self.expect_token_value("if".to_string())
+            .or_else(|_| Err(AstParserError::IncompatibleStatement))?;
+
+        self.expect_token_type(TokenType::BracketOpen)?;
+
+        let condition = self.try_parse_expression()?;
+
+        self.expect_token_type(TokenType::BracketClose)?;
+        self.expect_token_type(TokenType::CurlyBracketOpen)?;
+
+        let parsed_body = self.try_parse_local_body();
+        if let Err(err) = &parsed_body {
+            if *err != AstParserError::IncompatibleStatement {
+                return Err(err.clone());
+            }
+        }
+
+        self.expect_token_type(TokenType::CurlyBracketClose)?;
+        Ok(HuleStatement::IfStatement(HuleIfStatement {
+            condition,
+            body: Box::new(parsed_body.unwrap())
+        }))
+    }
 
     /// Bracket-Expression
     /// <bracket_open_token> <expression> <bracket_close_token>
@@ -217,20 +240,21 @@ impl AstParser {
 
         self.expect_token_type(TokenType::Semicolon)?;
 
-        Ok(HuleStatement::VariableDecl {
+        Ok(HuleStatement::VariableDecl(HuleVariableDecl {
             data_type: var_type.value,
             name: var_name.value,
             value: var_value
-        })
+        }))
     }
 
-    fn try_parse_local_body(&mut self) -> Result<Vec<HuleStatement>, AstParserError> {
+    fn try_parse_local_body(&mut self) -> Result<HuleStatement, AstParserError> {
         let mut result : Vec<HuleStatement> = vec![];
         let mut last_error = AstParserError::IncompatibleStatement;
 
         loop {
-            let mut parsed = self.try_parse_var_decl() // Try other internal parsers
-                ;//.or_else(|_| self.try_parse_if_statement());
+            let mut parsed = self.try_parse_if_statement()
+                .or_else(|_| self.try_parse_var_decl())
+                .or_else(|_| self.try_parse_func_call());
 
             if let Ok(statement) = parsed {
                 result.push(statement);
@@ -244,10 +268,52 @@ impl AstParser {
             return Err(last_error);
         }
 
-        Ok(result)
+        Ok(HuleStatement::Body(HuleBody::new(result)))
     }
 
-    fn try_parse_func_params(&mut self) -> Result<Vec<HuleParameter>, AstParserError> {
+    fn try_parse_func_call(&mut self) -> Result<HuleStatement, AstParserError> {
+        let start_index = self.tokens.get_current_token_index();
+
+        let func_name = self.expect_token_type(TokenType::Identifier)
+            .or_else(|_| Err(AstParserError::IncompatibleStatement))?;
+
+        self.expect_token_type(TokenType::BracketOpen)?;
+
+        let params = self.try_parse_func_call_params()
+            .or_reset(self, start_index)?;
+
+        self.expect_token_type(TokenType::BracketOpen)?;
+
+        Ok(HuleStatement::FunctionCall(HuleFuncCall {
+            name: func_name.value,
+            parameters: params,
+        }))
+    }
+
+
+
+    pub fn try_parse_func_call_params(&mut self) -> Result<Vec<HuleExpression>, AstParserError> {
+        let mut expressions = vec![];
+
+        loop {
+            let current_index = self.tokens.get_current_token_index();
+            let expression = self.try_parse_expression()
+                .or_reset(self, current_index)
+                .or_else(|_| Err(AstParserError::IncompatibleStatement))?;
+
+            expressions.push(expression);
+
+            if let Ok(token) = self.expect_token_type(TokenType::Comma) {
+                self.tokens.set_current_token_index(current_index + 1);
+            } else {
+                break;
+            }
+        }
+
+        Ok(expressions)
+    }
+
+    fn try_parse_func_decl_params(&mut self) -> Result<Vec<HuleParameter>, AstParserError> {
         let mut result : Vec<HuleParameter> = vec![];
         let remember_start = self.tokens.remember();
         loop {
@@ -266,10 +332,7 @@ impl AstParser {
             // ended, more params or invalid token
             let mut general_token = self.tokens.next().ok_or_else(|| AstParserError::IncompatibleStatement)?.clone();
             if  general_token.get_token_type() == TokenType::Comma || general_token.get_token_type() == TokenType::BracketClose {
-                result.push(HuleParameter {
-                    data_type: param_type.value.to_string(),
-                    name: param_name.value.to_string(),
-                });
+                result.push(HuleParameter::new(&param_type.value.to_string(), &param_name.value.to_string()));
 
                 if general_token.get_token_type() == TokenType::BracketClose {
                     self.tokens.prev();
@@ -284,6 +347,28 @@ impl AstParser {
         Ok(result)
     }
 
+    fn try_parse_entry_func(&mut self) -> Result<HuleStatement, AstParserError> {
+        self.expect_token_value("entry".to_string())
+            .map_err(|_| AstParserError::IncompatibleStatement)?;
+
+        // bracket open
+        self.expect_token_type(TokenType::CurlyBracketOpen)?;
+
+        // body
+        let body = self.try_parse_local_body()
+            .unwrap_or_else(|_| HuleStatement::Body(HuleBody::new(vec![])));
+
+        // bracket open
+        self.expect_token_type(TokenType::CurlyBracketClose)?;
+
+        Ok(HuleStatement::FunctionDef(HuleFuncDef {
+            name: "_entry".to_string(),
+            parameters: vec![],
+            return_type: "void".to_string(),
+            body: Box::new(body),
+        }))
+    }
+
     fn try_parse_function_decl(&mut self) -> Result<HuleStatement, AstParserError> {
         let mut func_ret_type = self.expect_token_type(TokenType::Identifier)
             .map_err(|_| AstParserError::IncompatibleStatement)?;
@@ -295,7 +380,7 @@ impl AstParser {
         self.expect_token_type(TokenType::BracketOpen)?;
 
         // parameters
-        let mut parameters = self.try_parse_func_params()
+        let mut parameters = self.try_parse_func_decl_params()
             .unwrap_or(vec![]);
 
         println!("found {} params", parameters.len());
@@ -315,7 +400,7 @@ impl AstParser {
 
         // body
         let body = self.try_parse_local_body()
-            .unwrap_or_else(|_| vec![]);
+            .unwrap_or_else(|_| HuleStatement::Body(HuleBody::new(vec![])));
 
         // curly bracket close
         let mut general_token = self.tokens.next().ok_or_else(|| AstParserError::IncompatibleStatement)?.clone();
@@ -323,13 +408,14 @@ impl AstParser {
             return Err(AstParserError::TokenExpected("}".to_string(), general_token.value));
         }
 
-        Ok(HuleStatement::FunctionDef {
+        Ok(HuleStatement::FunctionDef(HuleFuncDef {
             name: func_name.value.clone(),
             return_type: func_ret_type.value.clone(),
             parameters,
-            body,
-        })
+            body: Box::new(body),
+        }))
     }
+
 
     pub fn new(source : &str) -> AstParser {
         AstParser {
@@ -339,10 +425,7 @@ impl AstParser {
     }
 
     pub fn parse(&mut self, source : &str) -> Result<HuleProgramAst, AstParserError> {
-        let mut result = HuleProgramAst {
-            body: vec![]
-        };
-
+        let mut statements = vec![];
         self.source = source.to_owned();
 
         let mut tokenizer = Tokenizer::new();
@@ -354,12 +437,12 @@ impl AstParser {
             let current_index = self.tokens.get_current_token_index();
 
             let res = self.try_parse_var_decl()
+                .or_reset(self, current_index).or_else(|_| self.try_parse_entry_func())
                 .or_reset(self, current_index).or_else(|_| self.try_parse_function_decl());
 
             match res {
                 Ok(statement) => {
-                    result.body.push(statement.clone());
-                    println!("Added statement to program: {:?}", statement);
+                    statements.push(statement.clone());
                 }
                 Err(err) => {
                     if let AstParserError::IncompatibleStatement = err {
@@ -378,6 +461,8 @@ impl AstParser {
             }
         }
 
-        Ok(result)
+        Ok(HuleProgramAst {
+            body: HuleBody::new(statements)
+        })
     }
 }
