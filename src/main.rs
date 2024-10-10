@@ -21,6 +21,18 @@ fn main() {
     println!("");
 
 
+    let input = "entry{string test = \"\";}";
+    let input = "int global = \"some global var\";entry{string test = \"\";}string greet(string name) {string result = \"hello \" + name + \"!!!\";}";
+    let mut parser = AstParser::new(&input);
+    match parser.parse(&input) {
+        Ok(ast) => {
+            println!("{:#?}", ast);
+        }
+        Err(err) => {
+            println!("Compilation failed during parsing: {}", err.to_message())
+        }
+    }
+
     loop {
         let mut input = String::new();
         match std::io::stdin().read_line(&mut input) {
